@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Matrix Runner Game</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: black;
+            color: green;
+            font-family: monospace;
+        }
+        #gameCanvas {
+            background: black;
+            display: block;
+        }
+        #livesCounter {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            font-size: 20px;
+            color: green;
+        }
+    </style>
+</head>
+<body>
+    <div id="livesCounter">Lives: 10</div>
+    <canvas id="gameCanvas" width="800" height="400"></canvas>
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const livesCounter = document.getElementById('livesCounter');
+
+        let player = {
+            x: 50,
+            y: 300,
+            width: 30,
+            height: 60,
+            speed: 5,
+            jumpStrength: 12,
+            velocityY: 0,
+            onGround: true,
+        };
+
+        let gravity = 0.5;
+        let obstacles = [];
+        let keys = {};
+        let lives = 10;
+        let avoidedObstacles = 0;
+
+        function spawnObstacle() {
+            obstacles.push({ x: canvas.width, y: 350, width: 30, height: 50, color: 'orange', frame: 0 });
+        }
+        
+        setInterval(spawnObstacle, 2000);
+        
+        function gameLoop() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Handle player movement
+            if (keys['ArrowRight']) player.x += player.speed;
+            if (keys['ArrowLeft']) player.x -= player.speed;
+            if (keys['ArrowUp'] && player.onGround) {
+                player.velocityY = -player.jumpStrength;
+                player.onGround = false;
+            }
+            if (keys['ArrowDown']) {
+                player.height = 30; // Ducking
+            } else {
+                player.height = 60; // Normal
+            }
+
+            // Apply gravity
+            player.velocityY += gravity;
+            player.y += player.velocityY;
+
+            // Check for collision with ground
+            if (player.y > 300) {
+                player.y = 300;
+                player.velocityY = 0;
+                player.onGround = true;
+            }
+
+            // Draw player (more defined humanoid robot shape)
+            ctx.fillStyle = 'green';
+            ctx.beginPath();
+            // Draw body
+            ctx.fillRect(player.x, player.y, player.width, player.height);
+            // Draw head
+            ctx.fillRect(player.x + 5, player.y - 20, player.width - 10, 20);
+            // Draw left arm
+            ctx.fillRect(player.x - 10, player.y + 10, 10, 30);
+            // Draw right arm
+            ctx.fillRect(player.x + player.width, player.y + 10, 10, 30);
+            // Draw left leg
+            ctx.fillRect(player.x + 5, player.y + player.height, 10, 20);
+            // Draw right leg
+            ctx.fillRect(player.x + player.width - 15, player.y + player.height, 10, 20);
+
+            // Draw obstacles (flame shape and movement)
+            for (let i = 0; i < obstacles.length; i++) {
+                obstacles[i].x -= 5;
+                obstacles[i].frame = (obstacles[i].frame + 1) % 20;
+                ctx.fillStyle = obstacles[i].color;
+                ctx.beginPath();
+                ctx.moveTo(obstacles[i].x, obstacles[i].y + obstacles[i].height);
+                ctx.lineTo(obstacles[i].x + obstacles[i].width / 2, obstacles[i].y - (obstacles[i].frame < 10 ? 10 : 5));
+                ctx.lineTo(obstacles[i].x + obstacles[i].width, obstacles[i].y + obstacles[i].height);
+                ctx.closePath();
+                ctx.fill();
+
+                // Check for collision with player
+                if (player.x < obstacles[i].x + obstacles[i].width &&
+                    player.x + player.width > obstacles[i].x &&
+                    player.y < obstacles[i].y + obstacles[i].height &&
+                    player.y + player.height > obstacles[i].y) {
+                    // Collision detected
+                    lives--;
+                    livesCounter.textContent = 'Lives: ' + lives;
+                    obstacles.splice(i, 1);
+                    i--;
+
+                    if (lives <= 0) {
+                        alert('Game Over!');
+                        document.location.reload();
+                    }
+                }
+            }
+
+            // Remove off-screen obstacles
+            for (let i = 0; i < obstacles.length; i++) {
+                if (obstacles[i].x + obstacles[i].width < 0) {
+                    avoidedObstacles++;
+                    if (avoidedObstacles % 5 === 0) {
+                        lives++;
+                        livesCounter.textContent = 'Lives: ' + lives;
+                    }
+                    obstacles.splice(i, 1);
+                    i--;
+                }
+            }
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        // Keyboard event listeners
+        window.addEventListener('keydown', (e) => {
+            keys[e.key] = true;
+        });
+
+        window.addEventListener('keyup', (e) => {
+            keys[e.key] = false;
+        });
+
+        // Start the game loop
+        gameLoop();
+    </script>
+</body>
+</html>
