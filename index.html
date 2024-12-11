@@ -12,117 +12,204 @@
             color: green;
             font-family: monospace;
         }
-        #gameCanvas {
-            background: black;
-            display: block;
-        }
         #livesCounter {
             position: absolute;
             top: 10px;
             left: 10px;
             font-size: 20px;
             color: green;
+            z-index: 1;
+        }
+        #controls {
+            position: absolute;
+            top: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 2;
+        }
+        button {
+            font-size: 16px;
+            padding: 5px 15px;
+            margin: 0 5px;
+            background-color: black;
+            color: green;
+            border: 2px solid green;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: green;
+            color: black;
         }
     </style>
 </head>
 <body>
     <div id="livesCounter">Lives: 10</div>
-    <canvas id="gameCanvas" width="800" height="400"></canvas>
+    <div id="controls">
+        <button id="toggleButton">START</button>
+    </div>
+    <canvas id="gameCanvas"></canvas>
     <script>
         const canvas = document.getElementById('gameCanvas');
         const ctx = canvas.getContext('2d');
         const livesCounter = document.getElementById('livesCounter');
+        const toggleButton = document.getElementById('toggleButton');
+
+        // Sound Effects
+        const jumpSound = new Audio('https://freesound.org/data/previews/466/466217_7037-lq.mp3'); // Boing sound
+        const ouchSound = new Audio('https://freesound.org/data/previews/347/347012_6642405-lq.mp3'); // Ouch sound
+        const gameOverSound = new Audio('https://freesound.org/data/previews/276/276933_4486188-lq.mp3'); // Wah Wah Wah
+        const backgroundMusic = new Audio('https://freesound.org/data/previews/264/264315_4486188-lq.mp3'); // Circus-like music
+        backgroundMusic.loop = true;
 
         let player = {
             x: 50,
-            y: 300,
-            width: 30,
-            height: 60,
-            speed: 5,
-            jumpStrength: 12,
+            y: canvas.height - 100,
+            width: 40,
+            height: 80,
+            speed: 7,
+            jumpStrength: 15,
             velocityY: 0,
             onGround: true,
+            capeFlow: 0
         };
 
-        let gravity = 0.5;
+        let gravity = 0.6;
         let obstacles = [];
         let keys = {};
         let lives = 10;
         let avoidedObstacles = 0;
+        let isPaused = true;
+
+        let touchStartX = 0;
+        let touchEndX = 0;
+
+        // Resize the canvas to fit the screen
+        function resizeCanvas() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+            player.y = canvas.height - player.height;
+        }
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
 
         function spawnObstacle() {
-            obstacles.push({ x: canvas.width, y: 350, width: 30, height: 50, color: 'orange', frame: 0 });
+            obstacles.push({ 
+                x: canvas.width, 
+                y: canvas.height - 70, 
+                width: 30, 
+                height: 50, 
+                flameHeight: 20 + Math.random() * 30, // Randomized flame height
+                flicker: Math.random() * 10 // Random flicker variation
+            });
         }
-        
-        setInterval(spawnObstacle, 2000);
-        
-        function gameLoop() {
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-            // Handle player movement
+        function drawFlame(obstacle) {
+            const { x, y, width, height, flameHeight, flicker } = obstacle;
+            ctx.fillStyle = 'orange';
+            ctx.beginPath();
+            ctx.moveTo(x, y + height);
+            ctx.lineTo(x + width / 2, y + height - flameHeight - Math.sin(flicker) * 10); // Flickering tip
+            ctx.lineTo(x + width, y + height);
+            ctx.closePath();
+            ctx.fill();
+
+            ctx.fillStyle = 'red';
+            ctx.beginPath();
+            ctx.moveTo(x + 5, y + height);
+            ctx.lineTo(x + width / 2, y + height - flameHeight / 2 - Math.sin(flicker) * 5); // Inner flicker
+            ctx.lineTo(x + width - 5, y + height);
+            ctx.closePath();
+            ctx.fill();
+        }
+
+        function drawPlayer() {
+            // Body
+            ctx.fillStyle = 'blue';
+            ctx.fillRect(player.x, player.y, player.width, player.height);
+            
+            // Shield
+            ctx.fillStyle = 'red';
+            ctx.fillRect(player.x + 10, player.y + 20, 20, 20);
+            ctx.fillStyle = 'yellow';
+            ctx.fillText('S', player.x + 20, player.y + 35);
+            
+            // Head
+            ctx.fillStyle = 'blue';
+            ctx.beginPath();
+            ctx.arc(player.x + player.width / 2, player.y - 10, 15, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Cape
+            ctx.fillStyle = 'red';
+            ctx.beginPath();
+            ctx.moveTo(player.x, player.y + 10);
+            ctx.lineTo(player.x - 20, player.y + player.capeFlow); // Flowing cape point
+            ctx.lineTo(player.x, player.y + player.height);
+            ctx.closePath();
+            ctx.fill();
+
+            // Update cape flow dynamically
+            player.capeFlow = 10 + Math.sin(Date.now() / 100) * 5; // Sine wave for smooth flow
+        }
+
+        function handlePlayerMovement() {
             if (keys['ArrowRight']) player.x += player.speed;
             if (keys['ArrowLeft']) player.x -= player.speed;
             if (keys['ArrowUp'] && player.onGround) {
                 player.velocityY = -player.jumpStrength;
                 player.onGround = false;
+                jumpSound.play(); // Play jump sound
             }
-            if (keys['ArrowDown']) {
-                player.height = 30; // Ducking
-            } else {
-                player.height = 60; // Normal
+        }
+
+        function gameLoop() {
+            if (isPaused) {
+                drawInstructions();
+                return;
             }
+
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Handle player movement
+            handlePlayerMovement();
 
             // Apply gravity
             player.velocityY += gravity;
             player.y += player.velocityY;
 
             // Check for collision with ground
-            if (player.y > 300) {
-                player.y = 300;
+            if (player.y > canvas.height - player.height) {
+                player.y = canvas.height - player.height;
                 player.velocityY = 0;
                 player.onGround = true;
             }
 
-            // Draw player (more defined humanoid robot shape)
-            ctx.fillStyle = 'green';
-            ctx.beginPath();
-            // Draw body
-            ctx.fillRect(player.x, player.y, player.width, player.height);
-            // Draw head
-            ctx.fillRect(player.x + 5, player.y - 20, player.width - 10, 20);
-            // Draw left arm
-            ctx.fillRect(player.x - 10, player.y + 10, 10, 30);
-            // Draw right arm
-            ctx.fillRect(player.x + player.width, player.y + 10, 10, 30);
-            // Draw left leg
-            ctx.fillRect(player.x + 5, player.y + player.height, 10, 20);
-            // Draw right leg
-            ctx.fillRect(player.x + player.width - 15, player.y + player.height, 10, 20);
+            // Keep player within canvas bounds
+            if (player.x < 0) player.x = 0;
+            if (player.x + player.width > canvas.width) player.x = canvas.width - player.width;
 
-            // Draw obstacles (flame shape and movement)
+            drawPlayer();
+
+            // Draw obstacles
             for (let i = 0; i < obstacles.length; i++) {
                 obstacles[i].x -= 5;
-                obstacles[i].frame = (obstacles[i].frame + 1) % 20;
-                ctx.fillStyle = obstacles[i].color;
-                ctx.beginPath();
-                ctx.moveTo(obstacles[i].x, obstacles[i].y + obstacles[i].height);
-                ctx.lineTo(obstacles[i].x + obstacles[i].width / 2, obstacles[i].y - (obstacles[i].frame < 10 ? 10 : 5));
-                ctx.lineTo(obstacles[i].x + obstacles[i].width, obstacles[i].y + obstacles[i].height);
-                ctx.closePath();
-                ctx.fill();
+                drawFlame(obstacles[i]);
 
                 // Check for collision with player
                 if (player.x < obstacles[i].x + obstacles[i].width &&
                     player.x + player.width > obstacles[i].x &&
                     player.y < obstacles[i].y + obstacles[i].height &&
                     player.y + player.height > obstacles[i].y) {
-                    // Collision detected
                     lives--;
                     livesCounter.textContent = 'Lives: ' + lives;
+                    ouchSound.play(); // Play ouch sound
                     obstacles.splice(i, 1);
                     i--;
 
                     if (lives <= 0) {
+                        gameOverSound.play(); // Play game over sound
+                        backgroundMusic.pause(); // Stop background music
                         alert('Game Over!');
                         document.location.reload();
                     }
@@ -145,17 +232,67 @@
             requestAnimationFrame(gameLoop);
         }
 
-        // Keyboard event listeners
+        function drawInstructions() {
+            ctx.fillStyle = 'white';
+            ctx.textAlign = 'center';
+            ctx.font = '20px monospace';
+            ctx.fillText('Welcome to Matrix Runner!', canvas.width / 2, canvas.height / 4);
+            ctx.fillText('Instructions:', canvas.width / 2, canvas.height / 4 + 40);
+            ctx.fillText('- PC: Use Arrow Keys to move Neo. Press SPACE to pause/start.', canvas.width / 2, canvas.height / 4 + 80);
+            ctx.fillText('- Mobile: Tap to jump, swipe right to move forward, swipe left to move backward.', canvas.width / 2, canvas.height / 4 + 120);
+            ctx.fillText('Press the button or SPACE to start/stop the game.', canvas.width / 2, canvas.height / 4 + 160);
+        }
+
+        toggleButton.addEventListener('click', toggleGame);
         window.addEventListener('keydown', (e) => {
-            keys[e.key] = true;
+            if (e.key === ' ') {
+                e.preventDefault(); // Prevent page scrolling
+                toggleGame();
+            } else {
+                keys[e.key] = true;
+            }
         });
 
         window.addEventListener('keyup', (e) => {
             keys[e.key] = false;
         });
 
-        // Start the game loop
-        gameLoop();
+        function toggleGame() {
+            isPaused = !isPaused;
+            toggleButton.textContent = isPaused ? 'START' : 'STOP';
+            if (!isPaused) {
+                requestAnimationFrame(gameLoop);
+                backgroundMusic.play(); // Start background music
+                setInterval(spawnObstacle, 2000);
+            } else {
+                backgroundMusic.pause(); // Pause background music
+            }
+        }
+
+        canvas.addEventListener('touchstart', (e) => {
+            if (player.onGround) {
+                player.velocityY = -player.jumpStrength;
+                player.onGround = false;
+                jumpSound.play(); // Play jump sound
+            }
+            touchStartX = e.touches[0].clientX;
+        });
+
+        canvas.addEventListener('touchend', (e) => {
+            touchEndX = e.changedTouches[0].clientX;
+
+            const deltaX = touchEndX - touchStartX;
+
+            if (deltaX > 50) {
+                // Swipe right
+                player.x += player.speed * 10;
+            } else if (deltaX < -50) {
+                // Swipe left
+                player.x -= player.speed * 10;
+            }
+        });
+
+        drawInstructions();
     </script>
 </body>
 </html>
